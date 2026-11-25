@@ -34,7 +34,7 @@ recorded" verdicts and no ticket trace (below). Nothing was run live; the produc
 | Events tab | Timeline, agent, override, answer and finding events merged, newest first, with a filter by source and a count each; text only |
 | Staged patch card | On a running step: target, revision, the agent's reason, operations, the document folded, and "Show the plan as it would become" for a `self` patch; it changes and disappears live (LOG 581) |
 | Steer ▾ Go to a step…, Re-plan… | Grouped step picker, clean up, a consequence listing what will be cancelled (steps, their child runs, and the parallels and chains holding them) and saying the reason reaches the target only for an agent step, a required reason; after Apply the engine's reply names what it cancelled (LOG 581) |
-| Edit step → Instructions for the next attempt | Replaces B1's disabled Prompt option: text box, preview of where it goes in the prompt, byte limit, protected note (LOG 581) |
+| Edit step → Edit prompt (adds instructions) | Replaces B1's disabled Prompt option: text box, preview of where it goes in the prompt, byte limit, protected note (LOG 581) |
 | Review report page | `#/runs/{tree}/review` and `…/review/{run}`: summary, current pass's angles, findings, external review, trace, earlier passes folded, pull requests. Opened from the merge popup's Open review report and the run header's Review report ⧉, in a window of its own beside the pull request (LOG 579) |
 | Policy in force | Run actions → Policy in force: a popup of decisions, overrides and attempt limits; a null limit reads "set by the engine" |
 | Merge popup trace | A ticket's own `trace_report` is shown; a run with none says it predates the ticket trace or the step has not run (LOG 580) |
@@ -45,7 +45,7 @@ recorded" verdicts and no ticket trace (below). Nothing was run live; the produc
 |---|---|---|
 | Restart a run from a step after it ended; re-run a finished tree (E4) | Out of B2's scope. Go to and re-plan work on a live run only | The core refuses `go_to` and `replan` with "the run has ended"; once a run ends its `overrides_allowed` is empty, so the console disables both. Run actions' "Restart from a step…" and "Re-run" stay disabled |
 | Go to a step inside a parallel or chain that is running or has not started | Cancelling the container's other branches and running one would leave its join counting cancelled branches as failed (LOG 572) | Refused by the engine, shown in place: "… is in a branch of <container>, which is running its branches or has not started them; go to <container> to run them all". A step in a decided join runs again, as the recovery go to does |
-| Editing a prompt's text | It would let a person drop the reporting instructions (decision 2, LOG 573) | Edit step offers instructions for the next attempt instead |
+| Editing a prompt's text | It would let a person drop the reporting instructions (decision 2, LOG 573) | Edit step's Edit prompt (adds instructions) adds instructions for the next attempt instead |
 | A planning flag in the plan view | A contract change. Re-plan therefore offers every agent step | The engine refuses a non-planning target, shown in place |
 | A ledger page | Not in the design; the review report lists every finding with its state and reason | The Findings tab's ledger link opens the review report |
 | Events tab paging ("earlier ▸ · raw log", mock-up 02) | Not needed at today's sizes | All of a step's events are listed |
@@ -116,8 +116,8 @@ hosts. B2 adds no table and changes no workflow history, so runs in flight carry
    read the consequence (every step running or waiting that will be cancelled, and child runs), give a reason and
    Apply. The popup shows the engine's reply, naming what it cancelled. Re-plan… is the same for a planner step
    (`plan.plan`). Try a target past `verify` from before it: refused, since `verify` is protected.
-6. **Edit step → Instructions for the next attempt.** On an agent step, Edit step, choose Instructions for the next
-   attempt, type an instruction and Apply. The preview shows where it goes in the prompt. The next execution's
+6. **Edit step → Edit prompt (adds instructions).** On an agent step, Edit step, choose Edit prompt (adds
+   instructions), type an instruction and Apply. The preview shows where it goes in the prompt. The next execution's
    prompt artifact holds it under "A person's instructions for this step"; it stays until the step next succeeds, and
    the step page lists it as pending until then. On a
    protected step (under `verify` or `deliver`) the form notes that it needs `instruct_protected` (admin).
@@ -145,3 +145,9 @@ The three decisions for the product owner to confirm, each a LOG entry with "Nee
 | 572 | Go to and re-plan on a live run cancel everything in flight, including a project's running epics. Is that what "go to any step" should do? | Yes, listed in the consequence before Apply, with a reason required |
 | 573 | Is "instructions for the next attempt" what "edit the step's prompt" meant (B1 open question R8)? | Instructions, kept until the step next succeeds; the prompt text is not edited |
 | 575 | Should a gap in a ticket's trace block it, as it blocks an epic? | No: shown in the merge popup and the review report |
+
+The product owner answered on 2026-11-25. LOG 572 is accepted: a go to cancels only what the steered run is doing, and
+sibling runs run on. LOG 573 is accepted, with the control named "Edit prompt (adds instructions)"; an instruction
+given while the step waits at a breakpoint is in its first execution's prompt
+(`RunContextTests.An_instruction_given_at_a_breakpoint_reaches_the_steps_first_execution`). LOG 575 is accepted
+provisionally, to be revisited with a real case.

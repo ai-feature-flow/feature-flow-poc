@@ -133,6 +133,8 @@ public sealed class SteeringTests(BrowserFixture browser) : BrowserTest(browser)
         await OpenStepAsync(s => s.Tickets[0], "implement");
 
         await Page.GetByRole(AriaRole.Button, new() { Name = "Edit step", Exact = true }).ClickAsync();
+        // The product owner's name for it (LOG 573): editing the prompt adds instructions; the text is not replaced.
+        await Expect(Dialog.Locator("option[value=instructions]")).ToHaveTextAsync("Edit prompt (adds instructions)");
         await Dialog.GetByLabel("Change").SelectOptionAsync("instructions");
         await Dialog.GetByLabel("Instructions for the next attempt").FillAsync("Keep <b>the</b> public API unchanged.");
         // Shown as text, where the prompt has it: after why the step runs again, before the run context and task.
