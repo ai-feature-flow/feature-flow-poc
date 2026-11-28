@@ -1,0 +1,60 @@
+# A solo installation (docs/07 section 6): local processes, SQLite, the filesystem store, the Docker sandbox, GitHub.
+# The agents are Copilot CLI, on the Copilot quota of a GitHub account (docs/07 section 6.1).
+# Copy this file to installation.yaml in your install folder (docs/getting-started.md). Values in <ANGLE BRACKETS> are
+# yours; every other value runs as it stands. Paths are relative to this file. Secrets are not here: they are in
+# secrets.json beside it (deploy/local/secrets.example.json).
+api_version: feature-flow/v1
+kind: installation
+
+temporal:
+  address: "127.0.0.1:7233"             # deploy/local/ff.sh starts Temporal's dev server on this port (FF_TEMPORAL_PORT)
+  namespace: default
+  task_queue: feature-flow-local
+
+providers:
+  artifact_store: { default: filesystem, instances: { filesystem: { root: data/artifacts } } }
+  record_store: { default: sqlite, instances: { sqlite: { path: data/records.db } } }
+  secrets: { default: file, instances: { file: { path: secrets.json } } }
+  sandbox: { default: docker, instances: { docker: { image: "feature-flow-sandbox:local" } } }
+  agent_runtime:
+    default: copilot_cli
+    instances:
+      copilot_cli:
+        model: claude-sonnet-5.5          # a model in your Copilot catalogue (docs/07 section 6.1)
+        # copilot_github_token is a fine-grained token with the Copilot Requests permission. upstream is yours: the
+        # `endpoints.api` of GET https://api.github.com/copilot_internal/user, read with that token (getting-started.md
+        # section 6). The value here is a personal Copilot seat's; a Business seat is https://api.business.githubcopilot.com,
+        # Enterprise https://api.enterprise.githubcopilot.com.
+        model_access: { mode: proxy, key_ref: secrets/copilot_github_token, upstream: "https://api.individual.githubcopilot.com", auth: github }
+  vcs: { default: git, instances: { git: { cache: clones } } }
+  credential_broker:
+    default: github_app
+    instances:
+      github_app:
+        # A GitHub App installed on the repositories below (docs/getting-started.md section 6). The key is a file.
+        # Instead of key_path, key_ref: secrets/github_app_key reads the key from secrets.json.
+        app_id: "<GITHUB APP ID>"
+        installation_id: "<GITHUB APP INSTALLATION ID>"
+        key_path: "<PATH TO THE GITHUB APP PRIVATE KEY .pem>"
+        repositories: [ai-feature-flow/feature-flow-example]    # the repositories a credential may cover
+  code_host: { default: github, instances: { github: {} } }
+  ci: { default: github_actions, instances: { github_actions: {} } }
+  tracker:
+    default: github_issues
+    instances:
+      github_issues:
+        repository: ai-feature-flow/feature-flow-example        # the repository whose issues are tickets
+        status_map: { in_progress: "status: in progress", code_review: "status: code review", done: closed }
+  findings_source: { instances: { copilot_review: {} } }
+  validator: { instances: { std: {} } }
+
+# Sandboxes call the agent worker here (docs/02 section 4.2). host.docker.internal is the host, from inside Docker.
+agent_worker:
+  listen: "http://0.0.0.0:8481"
+  urls: ["http://host.docker.internal:8481"]
+  token_key_ref: secrets/step_token_key
+  sandbox_client: sandbox-client/ff-sandbox
+
+# No sign-in. The API host refuses this unless it listens on the loopback address (the default of deploy/local/ff.sh).
+api:
+  auth: { mode: none, actor: "<YOUR NAME>" }

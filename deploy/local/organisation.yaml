@@ -1,0 +1,13 @@
+# A solo organisation (docs/07 section 3): one library, and every approval is yours. It serves either installation: with
+# no role_mapping, each agent step runs on the installation's default runtime and that runtime's own model.
+# Copy this file to organisation.yaml in your install folder. <CHECKOUT> is the folder you cloned Feature Flow into.
+api_version: feature-flow/v1
+kind: organisation
+name: solo
+
+libraries:
+  - { name: std, source: directory, path: "<CHECKOUT>/library/std" }
+
+policy:
+  approval:
+    - { match: "*", roles: [approver], min_count: 1, from_chat: false, auto: false }

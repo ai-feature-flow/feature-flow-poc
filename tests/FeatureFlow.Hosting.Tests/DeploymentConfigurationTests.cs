@@ -47,6 +47,42 @@ public class DeploymentConfigurationTests
     }
 
     /// <summary>
+    /// The solo developer's example files (<c>deploy/local</c>) validate and compose, each installation with the one
+    /// organisation file, and the example secrets file holds every secret the installations name.
+    /// </summary>
+    [Theory]
+    [InlineData("installation.claude.yaml")]
+    [InlineData("installation.copilot.yaml")]
+    public void The_local_example_configuration_validates_and_composes_with_the_hosts_providers(string installationFile)
+    {
+        var root = Repository.Root;
+        var folder = Path.Combine(root, "deploy", "local");
+        var copy = Path.Combine(Path.GetTempPath(), $"ff-config-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(copy);
+        try
+        {
+            File.Copy(Path.Combine(folder, installationFile), Path.Combine(copy, "installation.yaml"));
+            File.WriteAllText(Path.Combine(copy, "organisation.yaml"),
+                File.ReadAllText(Path.Combine(folder, "organisation.yaml")).Replace("<CHECKOUT>", root));
+            var configuration = FeatureFlowConfiguration.Load(Path.Combine(copy, "installation.yaml"), Path.Combine(copy, "organisation.yaml"));
+            var set = ProviderComposer.Compose(configuration.Installation,
+                HostFactories.Select(f => f with { Create = _ => new DescribedOnlyProvider(f.Type) }));
+            Assert.NotEmpty(set.Types);
+            TrackersMapStdsStatuses(configuration.Installation);
+
+            var secrets = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "secrets.example.json"))).RootElement;
+            var referenced = System.Text.RegularExpressions.Regex.Matches(File.ReadAllText(Path.Combine(folder, installationFile)), @"^[^#\n]*\bsecrets/(\w+)", System.Text.RegularExpressions.RegexOptions.Multiline)
+                .Select(m => m.Groups[1].Value).Where(name => name != "github_app_key").Distinct();
+            foreach (var name in referenced)
+                Assert.True(secrets.TryGetProperty(name, out _), $"secrets.example.json has no '{name}', which {installationFile} names");
+        }
+        finally
+        {
+            Directory.Delete(copy, recursive: true);
+        }
+    }
+
+    /// <summary>
     /// L8: a status a tracker's <c>status_map</c> does not name is the tracker status of the same name, so a shipped
     /// configuration's tracker maps each of std's statuses (<c>library/std/status_map.yaml</c>) to its own.
     /// </summary>
