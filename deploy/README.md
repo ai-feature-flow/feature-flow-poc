@@ -9,6 +9,7 @@ the orchestration worker and the agent worker, with Temporal, a record store and
 | `images/` | `host.Dockerfile`, the image of each of the three hosts |
 | `kubernetes/` | The engine on any Kubernetes cluster: the hosts, their account, network policies |
 | `k3d/` | A local cluster with Temporal, Postgres and MinIO in it: `up.sh`, `down.sh`, `git.yaml` (a trial Git server), and `smoke/`, a trial configuration |
+| `local/` | A solo developer's example configuration and `ff.sh` / `ff.ps1`, the scripts that run it (`docs/getting-started.md`) |
 | `distribution-template/` | What a team copies to run Feature Flow: its configuration, deployment values and a README |
 
 ## Images
@@ -29,16 +30,22 @@ without waiting out its grace period. The standard library is in `/opt/feature-f
 ## Solo developer
 
 No cluster and no images: the three hosts run as local processes beside Temporal's dev server, with SQLite, the
-filesystem store, the Docker sandbox and a local API token.
+filesystem store, the Docker sandbox and no sign-in on the loopback address. `docs/getting-started.md` takes you from a
+fresh clone to a first run, on macOS and Windows. `deploy/local/` holds what it uses: example installation files for
+Claude Code and for Copilot CLI, an organisation file, `secrets.example.json`, and `ff.sh` and `ff.ps1`, which build,
+start, stop and update the four processes.
+
+To run the processes by hand:
 
 ```sh
-~/.temporalio/bin/temporal server start-dev --headless
+temporal server start-dev --headless
 dotnet run --project hosts/FeatureFlow.Host.OrchestrationWorker -- --installation installation.yaml --organisation organisation.yaml
 # and the same for FeatureFlow.Host.AgentWorker and FeatureFlow.Host.Api
 ```
 
 The installation names `sqlite`, `filesystem`, `file` secrets (with `from_environment` for a subscription token), the
-`docker` sandbox with the sandbox image, and `api.auth.mode: local_token`. Stop a host with Ctrl+C or SIGTERM.
+`docker` sandbox with the sandbox image, and `api.auth.mode: none` (or `local_token`). Stop a host with Ctrl+C or
+SIGTERM.
 
 ## k3d: a team's cluster on one machine
 

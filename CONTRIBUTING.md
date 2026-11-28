@@ -113,6 +113,9 @@ sections 3 and 4).
 
 ## Local setup (macOS)
 
+To run the engine from a clone, on macOS or Windows, see `docs/getting-started.md`. The table below is what
+development needs.
+
 | Need | Detail |
 |---|---|
 | .NET | SDK 10. All spike code targets `net10.0`. The fixture targets `net9.0`; run its tests with `DOTNET_ROLL_FORWARD=Major` |
